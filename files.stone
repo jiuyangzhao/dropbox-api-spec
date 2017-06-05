@@ -1,10 +1,8 @@
 namespace files
     "This namespace contains endpoints and data types for basic file operations."
 
-import async
-import auth
 import common
-import users_common
+import users
 import properties
 
 alias Id = String(min_length=1)
@@ -66,7 +64,7 @@ struct FileSharingInfo extends SharingInfo
     parent_shared_folder_id common.SharedFolderId
         "ID of shared folder that holds this file."
 
-    modified_by users_common.AccountId?
+    modified_by users.AccountId?
         "The last user who modified the file. This field will be null if
         the user's account has been deleted."
 
@@ -278,8 +276,6 @@ route get_metadata (GetMetadataArg, Metadata, GetMetadataError)
 
     attrs
         owner = "dev-plat"
-        allow_app_folder_app = true
-        takes_path_root = true
 
 #
 # List folder routes
@@ -325,12 +321,10 @@ route list_folder/longpoll (ListFolderLongpollArg, ListFolderLongpollResult, Lis
     for client-side apps. If you're looking for server-side notifications,
     check out our
     :link:`webhooks documentation https://www.dropbox.com/developers/reference/webhooks`."
-
     attrs
         host = "notify"
         auth = "noauth"
         owner = "dev-plat"
-        allow_app_folder_app = true
 
 struct ListFolderArg
     path PathR
@@ -387,16 +381,7 @@ route list_folder (ListFolderArg, ListFolderResult, ListFolderError)
     :field:`FolderSharingInfo.read_only` and set all its children's read-only statuses to match.
 
     For each :type:`DeletedMetadata`, if your local state has something at the given path, remove it
-    and all its children. If there's nothing at the given path, ignore this entry.
-
-    Note: :type:`auth.RateLimitError` may be returned if multiple :route:`list_folder` or
-    :route:`list_folder/continue` calls with same parameters are made simultaneously by same
-    API app for same user. If your app implements retry logic, please hold off the retry until
-    the previous request finishes."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
+    and all its children. If there's nothing at the given path, ignore this entry."
 
 struct ListFolderContinueArg
     cursor ListFolderCursor
@@ -419,7 +404,6 @@ route list_folder/continue (ListFolderContinueArg, ListFolderResult, ListFolderC
 
     attrs
         owner = "dev-plat"
-        allow_app_folder_app = true
 
 struct ListFolderGetLatestCursorResult
     cursor ListFolderCursor
@@ -437,7 +421,6 @@ route list_folder/get_latest_cursor (ListFolderArg, ListFolderGetLatestCursorRes
 
     attrs
         owner = "dev-plat"
-        allow_app_folder_app = true
 
 #
 # Download
@@ -468,7 +451,6 @@ route download (DownloadArg, FileMetadata, DownloadError)
         host = "content"
         style = "download"
         owner = "dev-plat"
-        allow_app_folder_app = true
 
 #
 # Upload Routes
@@ -492,8 +474,7 @@ struct UploadSessionOffsetError
 
 union UploadSessionLookupError
     not_found
-        "The upload session ID was not found or has expired. Upload sessions are
-        valid for 48 hours."
+        "The upload session id was not found."
     incorrect_offset UploadSessionOffsetError
         "The specified offset was incorrect. See the value for the
         correct offset. This error may occur when a previous request
@@ -513,9 +494,6 @@ union UploadSessionFinishError
     too_many_shared_folder_targets
         "The batch request commits files into too many different shared folders.
         Please limit your batch request to files contained in a single shared folder."
-    too_many_write_operations
-        "There are too many write operations happening in the user's Dropbox. You should
-        retry uploading this file."
 
 # Req/Resp
 
@@ -545,20 +523,13 @@ route upload_session/start (UploadSessionStartArg, UploadSessionStartResult, Voi
     :route:`upload_session/finish` to save all the data to a file in
     Dropbox.
 
-    A single request should not upload more than 150 MB.
-
-    An upload session can be used for a maximum of 48 hours. Attempting
-    to use an :field:`UploadSessionStartResult.session_id` with
-    :route:`upload_session/append_v2` or :route:`upload_session/finish` more
-    than 48 hours after its creation will return a
-    :field:`UploadSessionLookupError.not_found`."
+    A single request should not upload more than 150 MB of file contents."
 
     attrs
         host = "content"
         style = "upload"
         owner = "dev-plat"
         feature = "upload_api_rate_limit"
-        allow_app_folder_app = true
 
 struct UploadSessionAppendArg
     cursor UploadSessionCursor
@@ -576,14 +547,13 @@ route upload_session/append_v2 (UploadSessionAppendArg, Void, UploadSessionLooku
 
     When the parameter close is set, this call will close the session.
 
-    A single request should not upload more than 150 MB."
+    A single request should not upload more than 150 MB of file contents."
 
     attrs
         host = "content"
         style = "upload"
         owner = "dev-plat"
         feature = "upload_api_rate_limit"
-        allow_app_folder_app = true
 
 
 struct UploadSessionCursor
@@ -601,14 +571,13 @@ struct UploadSessionCursor
 route upload_session/append (UploadSessionCursor, Void, UploadSessionLookupError) deprecated by upload_session/append_v2
     "Append more data to an upload session.
 
-    A single request should not upload more than 150 MB."
+    A single request should not upload more than 150 MB of file contents."
 
     attrs
         host = "content"
         style = "upload"
         owner = "dev-plat"
         feature = "upload_api_rate_limit"
-        allow_app_folder_app = true
 
 union_closed WriteMode
     "Your intent when writing a file to some path. This is used to determine
@@ -693,14 +662,13 @@ route upload_session/finish (UploadSessionFinishArg, FileMetadata, UploadSession
     "Finish an upload session and save the uploaded data to the given file
     path.
 
-    A single request should not upload more than 150 MB."
+    A single request should not upload more than 150 MB of file contents."
 
     attrs
         host = "content"
         style = "upload"
         owner = "dev-plat"
         feature = "upload_api_rate_limit"
-        allow_app_folder_app = true
 
 route upload (CommitInfo, FileMetadata, UploadError)
     "Create a new file with the contents provided in the request.
@@ -713,182 +681,16 @@ route upload (CommitInfo, FileMetadata, UploadError)
         style = "upload"
         owner = "dev-plat"
         feature = "upload_api_rate_limit"
-        allow_app_folder_app = true
-        takes_path_root = true
-
-#
-# Batch Upload
-#
-
-struct UploadSessionFinishBatchArg
-    entries List(UploadSessionFinishArg, max_items=1000)
-        "Commit information for each file in the batch."
-
-    example default
-        entries = [default]
-
-struct UploadSessionFinishBatchResult
-    entries List(UploadSessionFinishBatchResultEntry)
-        "Commit result for each file in the batch."
-
-    example default
-        entries = [default]
-
-union_closed UploadSessionFinishBatchResultEntry
-    success FileMetadata
-    failure UploadSessionFinishError
-
-    example default
-        success = default
-
-union_closed UploadSessionFinishBatchJobStatus extends async.PollResultBase
-    complete UploadSessionFinishBatchResult
-        "The :route:`upload_session/finish_batch` has finished."
-
-    example default
-        complete = default
-
-union UploadSessionFinishBatchLaunch extends async.LaunchResultBase
-    "Result returned by :route:`upload_session/finish_batch` that may either launch an
-    asynchronous job or complete synchronously."
-
-    complete UploadSessionFinishBatchResult
-
-    example complete
-        complete = default
-
-    example async_job_id
-        async_job_id = "34g93hh34h04y384084"
-
-route upload_session/finish_batch (UploadSessionFinishBatchArg, UploadSessionFinishBatchLaunch, Void)
-    "This route helps you commit many files at once into a user's Dropbox. Use
-    :route:`upload_session/start` and :route:`upload_session/append_v2` to
-    upload file contents. We recommend uploading many files in parallel to increase
-    throughput. Once the file contents have been uploaded, rather than calling
-    :route:`upload_session/finish`, use this route to finish all your upload sessions
-    in a single request.
-
-    :field:`UploadSessionStartArg.close` or :field:`UploadSessionAppendArg.close`
-    needs to be true for the last
-    :route:`upload_session/start` or :route:`upload_session/append_v2` call.
-
-    This route will return a job_id immediately and do the async commit job in background.
-    Use :route:`upload_session/finish_batch/check` to check the job status.
-
-    For the same account, this route should be executed serially. That means you should not start
-    the next job before current job finishes. We allow up to 1000 entries in a single request."
-
-    attrs
-        owner = "dev-plat"
-        feature = "upload_api_rate_limit"
-        allow_app_folder_app = true
-
-route upload_session/finish_batch/check(async.PollArg, UploadSessionFinishBatchJobStatus, async.PollError)
-    "Returns the status of an asynchronous job for :route:`upload_session/finish_batch`. If
-    success, it returns list of result for each entry."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Search
-#
-
-union_closed SearchMode
-    filename
-        "Search file and folder names."
-    filename_and_content
-        "Search file and folder names as well as file contents."
-    deleted_filename
-        "Search for deleted file and folder names."
-
-    example default
-        filename_and_content = null
-
-    example name_only
-        filename = null
-
-    example deleted_names
-        deleted_filename = null
-
-struct SearchArg
-    path PathR
-        "The path in the user's Dropbox to search. Should probably be
-        a folder."
-    query String
-        "The string to search for. The search string is split on spaces into
-        multiple tokens. For file name searching, the last token is used for
-        prefix matching (i.e. \"bat c\" matches \"bat cave\" but not \"batman
-        car\")."
-    start UInt64 = 0
-        "The starting index within the search results (used for paging)."
-    max_results UInt64(min_value=1, max_value=1000) = 100
-        "The maximum number of search results to return."
-    mode SearchMode = filename
-        "The search mode (filename, filename_and_content, or deleted_filename).
-        Note that searching file content is only available for Dropbox Business
-        accounts."
-
-    example default
-        path = ""
-        query = "prime numbers"
-
-union_closed SearchMatchType
-    "Indicates what type of match was found for a given item."
-
-    filename
-        "This item was matched on its file or folder name."
-    content
-        "This item was matched based on its file contents."
-    both
-        "This item was matched based on both its contents and its file name."
-
-    example default
-        content = null
-
-struct SearchMatch
-    match_type SearchMatchType
-        "The type of the match."
-    metadata Metadata
-        "The metadata for the matched file or folder."
-
-    example default
-        match_type = default
-        metadata = default
-
-struct SearchResult
-    matches List(SearchMatch)
-        "A list (possibly empty) of matches for the query."
-    more Boolean
-        "Used for paging. If true, indicates there is another page of results
-        available that can be fetched by calling :route:`search` again."
-    start UInt64
-        "Used for paging. Value to set the start argument to when calling
-        :route:`search` to fetch the next page of results."
-
-    example default
-        matches = [default]
-        more = false
-        start = 1
-
-union SearchError
-    path LookupError
-
-route search (SearchArg, SearchResult, SearchError)
-    "Searches for files and folders.
-
-    Note: Recent changes may not immediately be reflected in search results due to a short delay in indexing."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
 
 #
 # Errors shared by various operations
 #
 
 alias MalformedPathError = String?  # TODO: Maybe a user_message-like thing?
+
+struct PathRootError
+    path_root String?
+        "The user's latest path root value. None if the user no longer has a path root."
 
 union LookupError
     malformed_path MalformedPathError
@@ -901,6 +703,8 @@ union LookupError
     restricted_content
         "The file cannot be transferred because the content is restricted.  For example,
         sometimes there are legal restrictions due to copyright claims."
+    invalid_path_root PathRootError
+        "The path root parameter provided is invalid."
 
 union WriteError
     malformed_path MalformedPathError
@@ -912,8 +716,6 @@ union WriteError
         "The user doesn't have enough available space (bytes) to write more data."
     disallowed_name
         "Dropbox will not save the file or folder because of its name."
-    team_folder
-        "This endpoint cannot modify or delete team folders."
 
 union WriteConflictError
     file
@@ -922,30 +724,6 @@ union WriteConflictError
         "There's a folder in the way."
     file_ancestor
         "There's a file at an ancestor path, so we couldn't create the required parent folders."
-
-#
-# Create folder
-#
-
-struct CreateFolderArg
-    path WritePath
-        "Path in the user's Dropbox to create."
-    autorename Boolean = false
-        "If there's a conflict, have the Dropbox server try to autorename
-        the folder to avoid the conflict."
-
-    example default
-        path = "/Homework/math"
-
-union_closed CreateFolderError
-    path WriteError
-
-route create_folder (CreateFolderArg, FolderMetadata, CreateFolderError)
-    "Create a folder at a given path."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
 
 #
 # Delete
@@ -962,56 +740,12 @@ union DeleteError
     path_lookup LookupError
     path_write WriteError
 
-struct DeleteBatchArg
-    entries List(DeleteArg)
-
-    example default
-        entries = [delete]
-
-union_closed DeleteBatchResultEntry
-    success DeleteResult
-    failure DeleteError
-
-    example default
-        success = default
-
 struct DeleteResult
     metadata Metadata
 
     example default
         metadata = default
 
-struct DeleteBatchResult
-    entries List(DeleteBatchResultEntry)
-
-    example default
-        entries = [default]
-
-union DeleteBatchError
-    too_many_write_operations
-        "There are too many write operations in user's Dropbox. Please retry
-        this request."
-
-union DeleteBatchJobStatus extends async.PollResultBase
-    complete DeleteBatchResult
-        "The batch delete has finished."
-    failed DeleteBatchError
-        "The batch delete has failed."
-
-    example default
-        complete = default
-
-union DeleteBatchLaunch extends async.LaunchResultBase
-    "Result returned by :route:`delete_batch` that may either launch an asynchronous job or complete
-    synchronously."
-
-    complete DeleteBatchResult
-
-    example complete
-        complete = default
-
-    example async_job_id
-        async_job_id = "34g93hh34h04y384084"
 
 route delete (DeleteArg, Metadata, DeleteError)
     "Delete the file or folder at a given path.
@@ -1024,204 +758,12 @@ route delete (DeleteArg, Metadata, DeleteError)
 
     attrs
         owner = "dev-plat"
-        allow_app_folder_app = true
-
-route delete_batch (DeleteBatchArg, DeleteBatchLaunch, Void)
-    "Delete multiple files/folders at once.
-
-    This route is asynchronous, which returns a job ID immediately and runs
-    the delete batch asynchronously. Use :route:`delete_batch/check` to check
-    the job status."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-route delete_batch/check (async.PollArg, DeleteBatchJobStatus, async.PollError)
-    "Returns the status of an asynchronous job for :route:`delete_batch`. If
-    success, it returns list of result for each entry."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
 
 route permanently_delete (DeleteArg, Void, DeleteError)
     "Permanently delete the file or folder at a given path
     (see https://www.dropbox.com/en/help/40).
 
     Note: This endpoint is only available for Dropbox Business apps."
-
-#
-# Args and error shared by copy and move
-#
-
-struct RelocationPath
-    from_path WritePath
-        "Path in the user's Dropbox to be copied or moved."
-    to_path WritePath
-        "Path in the user's Dropbox that is the destination."
-
-    example default
-        from_path = "/Homework/math"
-        to_path = "/Homework/algebra"
-
-struct RelocationArg extends RelocationPath
-    allow_shared_folder Boolean = false
-        "If true, :route:`copy` will copy contents in shared folder,
-        otherwise :field:`RelocationError.cant_copy_shared_folder` will be
-        returned if :field:`from_path` contains shared folder. This field is
-        always true for :route:`move`."
-    autorename Boolean = false
-        "If there's a conflict, have the Dropbox server try to autorename
-        the file to avoid the conflict."
-
-    example default
-        from_path = "/Homework/math"
-        to_path = "/Homework/algebra"
-
-union RelocationError
-    from_lookup LookupError
-    from_write WriteError
-    to WriteError
-
-    cant_copy_shared_folder
-        "Shared folders can't be copied."
-    cant_nest_shared_folder
-        "Your move operation would result in nested shared folders.  This is not allowed."
-    cant_move_folder_into_itself
-        "You cannot move a folder into itself."
-    too_many_files
-        "The operation would involve more than 10,000 files and folders."
-    duplicated_or_nested_paths
-        "There are duplicated/nested paths among :field:`RelocationArg.from_path`
-        and :field:`RelocationArg.to_path`."
-
-struct RelocationBatchArg
-    entries List(RelocationPath)
-        "List of entries to be moved or copied. Each entry is :type:`RelocationPath`."
-    allow_shared_folder Boolean = false
-        "If true, :route:`copy_batch` will copy contents in shared folder,
-        otherwise :field:`RelocationError.cant_copy_shared_folder` will be
-        returned if :field:`RelocationPath.from_path` contains shared folder.
-         This field is always true for :route:`move_batch`."
-    autorename Boolean = false
-        "If there's a conflict with any file, have the Dropbox server try to
-        autorename that file to avoid the conflict."
-
-    example default
-        entries = [default]
-
-struct RelocationBatchResult
-    entries List(RelocationResult)
-
-    example default
-        entries = [default]
-
-union_closed RelocationBatchJobStatus extends async.PollResultBase
-    complete RelocationBatchResult
-        "The copy or move batch job has finished."
-    failed RelocationBatchError
-        "The copy or move batch job has failed with exception."
-
-    example default
-        complete = default
-
-union RelocationBatchLaunch extends async.LaunchResultBase
-
-    "Result returned by :route:`copy_batch` or :route:`move_batch` that may either launch an
-    asynchronous job or complete synchronously."
-
-    complete RelocationBatchResult
-
-    example complete
-        complete = default
-
-    example async_job_id
-        async_job_id = "34g93hh34h04y384084"
-
-struct RelocationResult
-    metadata Metadata
-
-    example default
-        metadata = default
-
-union RelocationBatchError extends RelocationError
-    too_many_write_operations
-        "There are too many write operations in user's Dropbox. Please retry
-        this request."
-#
-# Copy
-#
-
-route copy (RelocationArg, Metadata, RelocationError)
-    "Copy a file or folder to a different location in the user's Dropbox.
-
-    If the source path is a folder all its contents will be copied."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-
-route copy_batch (RelocationBatchArg, RelocationBatchLaunch, Void)
-    "Copy multiple files or folders to different locations at once in the
-    user's Dropbox.
-
-    If :field:`RelocationBatchArg.allow_shared_folder` is false, this
-    route is atomic. If on entry failes, the whole transaction will abort. If
-    :field:`RelocationBatchArg.allow_shared_folder` is true, not
-    atomicity is guaranteed, but you will be able to copy the contents of
-    shared folders to new locations.
-
-    This route will return job ID immediately and do the async copy job in
-    background. Please use :route:`copy_batch/check` to check the job status."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-route copy_batch/check(async.PollArg, RelocationBatchJobStatus, async.PollError)
-    "Returns the status of an asynchronous job for :route:`copy_batch`. If
-    success, it returns list of results for each entry."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Move
-#
-
-route move (RelocationArg, Metadata, RelocationError)
-    "Move a file or folder to a different location in the user's Dropbox.
-
-    If the source path is a folder all its contents will be moved."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-route move_batch (RelocationBatchArg, RelocationBatchLaunch, Void)
-    "Move multiple files or folders to different locations at once in the
-    user's Dropbox.
-
-    This route is 'all or nothing', which means if one entry fails, the
-    whole transaction will abort.
-
-    This route will return job ID immediately and do the async moving job in
-    background. Please use :route:`move_batch/check` to check the job status."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-route move_batch/check(async.PollArg, RelocationBatchJobStatus, async.PollError)
-    "Returns the status of an asynchronous job for :route:`move_batch`. If
-    success, it returns list of results for each entry."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
 
 #
 # Thumbnail
@@ -1286,275 +828,3 @@ route get_thumbnail(ThumbnailArg, FileMetadata, ThumbnailError)
         host = "content"
         style = "download"
         owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Preview
-#
-
-struct PreviewArg
-    path ReadPath
-        "The path of the file to preview."
-    rev Rev?
-        "Deprecated. Please specify revision in :field:`path` instead."
-
-    example default
-        path = "/word.docx"
-
-    example id
-        path = "id:a4ayc_80_OEAAAAAAAAAYa"
-
-    example rev
-        path = "rev:a1c10ce0dd78"
-
-union_closed PreviewError
-    path LookupError
-        "An error occurs when downloading metadata for the file."
-    in_progress
-        "This preview generation is still in progress and the file is not ready
-         for preview yet."
-    unsupported_extension
-        "The file extension is not supported preview generation."
-    unsupported_content
-        "The file content is not supported for preview generation."
-
-route get_preview(PreviewArg, FileMetadata, PreviewError)
-    "Get a preview for a file.
-
-    Currently, PDF previews are generated for files with the following extensions:
-    .ai, .doc, .docm, .docx, .eps, .odp, .odt, .pps, .ppsm, .ppsx, .ppt, .pptm, .pptx, .rtf.
-
-    HTML previews are generated for files with the following extensions: .csv, .ods, .xls, .xlsm, .xlsx.
-
-    Other formats will return an unsupported extension error."
-
-    attrs
-        host = "content"
-        style = "download"
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# List revisions
-#
-
-struct ListRevisionsArg
-    path PathOrId
-        "The path to the file you want to see the revisions of."
-
-    limit UInt64(min_value=1, max_value=100) = 10
-        "The maximum number of revision entries returned."
-
-    # TODO: Add last_rev when we get pagination support from FJ Service.
-
-    example default
-        path = "/root/word.docx"
-        limit = 10
-
-union ListRevisionsError
-    path LookupError
-
-struct ListRevisionsResult
-    is_deleted Boolean
-        "If the file is deleted."
-    entries List(FileMetadata)
-        "The revisions for the file. Only non-delete revisions will show up here."
-
-    example default
-        is_deleted = false
-        entries = [default]
-
-route list_revisions(ListRevisionsArg, ListRevisionsResult, ListRevisionsError)
-    "Return revisions of a file."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Restore
-#
-
-struct RestoreArg
-    path WritePath
-        "The path to the file you want to restore."
-    rev Rev
-        "The revision to restore for the file."
-
-    example default
-        path = "/root/word.docx"
-        rev = "a1c10ce0dd78"
-
-union RestoreError
-    path_lookup LookupError
-        "An error occurs when downloading metadata for the file."
-    path_write WriteError
-        "An error occurs when trying to restore the file to that path."
-    invalid_revision
-        "The revision is invalid. It may point to a different file."
-
-route restore(RestoreArg, FileMetadata, RestoreError)
-    "Restore a file to a specific revision."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Temporary link
-#
-
-struct GetTemporaryLinkArg
-    path ReadPath
-        "The path to the file you want a temporary link to."
-
-    example default
-        path = "/video.mp4"
-
-struct GetTemporaryLinkResult
-    metadata FileMetadata
-        "Metadata of the file."
-    link String
-        "The temporary link which can be used to stream content the file."
-
-    example default
-        metadata = default
-        link = "https://dl.dropboxusercontent.com/apitl/1/YXNkZmFzZGcyMzQyMzI0NjU2NDU2NDU2"
-
-union GetTemporaryLinkError
-    path LookupError
-
-route get_temporary_link(GetTemporaryLinkArg, GetTemporaryLinkResult, GetTemporaryLinkError)
-    "Get a temporary link to stream content of a file. This link will expire in four hours and
-    afterwards you will get 410 Gone. Content-Type of the link is determined automatically by
-    the file's mime type."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Copy reference
-#
-
-struct GetCopyReferenceArg
-    path ReadPath
-        "The path to the file or folder you want to get a copy reference to."
-
-    example default
-        path = "/video.mp4"
-
-struct GetCopyReferenceResult
-    metadata Metadata
-        "Metadata of the file or folder."
-    copy_reference String
-        "A copy reference to the file or folder."
-    expires common.DropboxTimestamp
-        "The expiration date of the copy reference. This value is currently set to be
-        far enough in the future so that expiration is effectively not an issue."
-
-    example default
-        metadata = default
-        copy_reference = "z1X6ATl6aWtzOGq0c3g5Ng"
-        expires = "2045-05-12T15:50:38Z"
-
-union GetCopyReferenceError
-    path LookupError
-
-route copy_reference/get(GetCopyReferenceArg, GetCopyReferenceResult, GetCopyReferenceError)
-    "Get a copy reference to a file or folder. This reference string can be used to
-    save that file or folder to another user's Dropbox by passing it to
-    :route:`copy_reference/save`."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-struct SaveCopyReferenceArg
-    copy_reference String
-        "A copy reference returned by :route:`copy_reference/get`."
-
-    path Path
-        "Path in the user's Dropbox that is the destination."
-
-    example default
-        copy_reference = "z1X6ATl6aWtzOGq0c3g5Ng"
-        path = "/video.mp4"
-
-struct SaveCopyReferenceResult
-    metadata Metadata
-        "The metadata of the saved file or folder in the user's Dropbox."
-
-    example default
-        metadata = default
-
-union SaveCopyReferenceError
-    path WriteError
-    invalid_copy_reference
-        "The copy reference is invalid."
-    no_permission
-        "You don't have permission to save the given copy reference. Please make sure this app
-        is same app which created the copy reference and the source user is still linked to
-        the app."
-    not_found
-        "The file referenced by the copy reference cannot be found."
-    too_many_files
-        "The operation would involve more than 10,000 files and folders."
-
-route copy_reference/save(SaveCopyReferenceArg, SaveCopyReferenceResult, SaveCopyReferenceError)
-    "Save a copy reference returned by :route:`copy_reference/get` to the user's Dropbox."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Save URL
-#
-
-struct SaveUrlArg
-    path Path
-        "The path in Dropbox where the URL will be saved to."
-    url String
-        "The URL to be saved."
-
-    example default
-        path = "/a.txt"
-        url = "http://example.com/a.txt"
-
-union_closed SaveUrlResult extends async.LaunchResultBase
-    complete FileMetadata
-        "Metadata of the file where the URL is saved to."
-
-union SaveUrlError
-    path WriteError
-    download_failed
-        "Failed downloading the given URL."
-    invalid_url
-        "The given URL is invalid."
-    not_found
-        "The file where the URL is saved to no longer exists."
-
-route save_url(SaveUrlArg, SaveUrlResult, SaveUrlError)
-    "Save a specified URL into a file in user's Dropbox. If the given path already
-    exists, the file will be renamed to avoid the conflict (e.g. myfile (1).txt)."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
-
-#
-# Save URL Job
-#
-
-union_closed SaveUrlJobStatus extends async.PollResultBase
-    complete FileMetadata
-        "Metadata of the file where the URL is saved to."
-    failed SaveUrlError
-
-route save_url/check_job_status(async.PollArg, SaveUrlJobStatus, async.PollError)
-    "Check the status of a :route:`save_url` job."
-
-    attrs
-        owner = "dev-plat"
-        allow_app_folder_app = true
